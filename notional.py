@@ -4,7 +4,6 @@ TO ADD filter transactions for only Lend and Borrow remove Settle Debt Cash
 
 """
 
-
 from utils import client,todayTimestamp
 from gql import gql
 from utils import TIMESTAMP_PER_YEAR
@@ -15,7 +14,7 @@ NOTIONAL_API="https://api.thegraph.com/subgraphs/name/notional-finance/mainnet-v
 TIMESTAMP_INI=1635724800 # when version was launched i.e. Nov 1st
 CURRENCY_MAP={"ETH":"1","DAI":"2","USDC":"3","WBTC":"4"}
 ADJ_FACTOR_1=10**8 #Most variables in Notional’s subgraph are 8 decimals (10^8). This includes the following variables: depositShares, balances, portfolio assets, asset Cash, fCash, TVL and many more.
-
+ADJ_FACTOR_2=10**18
 def tradingFee(timestamp):
     """
     Returns the Annualized Trading fee at a given timestamp
@@ -97,9 +96,99 @@ class Notional:
         # adjust for trading fee
         trades['Market Rate']=np.where(trades['tradeType']=='Borrow',trades['APY']-trades['Ann Fee'],trades['APY']+trades['Ann Fee'])
         return trades
+    def getAccounts(self,account_types='all'):
+        """
+        :param account_types: either 'all' for all accounts,'lend' for lenders only, 'borrow'
+        :return: accounts holdings with borrows
+        """
+        sid=0
+        params = {
+            "account_id": sid,
+        }
+        if account_types=='all':
+            add_on=''
+        else:
+            if account_types=='lend':
+                add_on= 'hasPortfolioAssetDebt: false'
+            else:
+                if account_types=='borrow':
+                    add_on = 'hasPortfolioAssetDebt: true'
+                else:
+                    ValueError('account type needs to be either all,lend,borrow')
+        query='''
+         query($account_id:ID!){
+            accounts(
+            first: 1000,
+            orderBy: id
+            orderDirection: asc
+            where: {id_gt:$account_id,'''+add_on+'''}
+          ) {
+            id
+            hasCashDebt
+            hasPortfolioAssetDebt
+            portfolio {
+              maturity
+              notional
+              id
+              assetType
+              currency {
+                symbol
+              }
+            }
+            balances {
+              assetCashBalance
+              nTokenBalance
+              accountIncentiveDebt
+              id
+              currency {
+                symbol
+              }
+            }
+          }
+        }
+        
+        '''
+        is_finished=0
+        df_account=pd.DataFrame()
+        while is_finished==0:
+            client=self.client
+            response = client.execute(gql(query),variable_values=params)
+            account_data=pd.json_normalize(response['accounts'])
+            if len(account_data)>0: # no more data to download
+                max_id=account_data['id'].max()
+                params["account_id"]=max_id
+                df_account=df_account.append(account_data)
+            else:
+                is_finished=1
+        return df_account
 
 
-note=Notional()
-tdata=note.getTrades("USDC")
-rates=note.getHistoricalRates("USDC")
-print('HOURRA')
+def extractField(dport,field):
+    """
+    Extracts portfolio for a portfolio field
+    :param dport: portfolio nested field
+    field either portfolio or balances field we want to unpack
+    :return:
+    """
+    dp=pd.json_normalize(dport[field])
+    df_ini=pd.DataFrame()
+    for col in dp.columns:
+        df_ini2=pd.DataFrame(index=dport['id'])
+        pt=pd.json_normalize(pd.json_normalize(dport[field])[col])
+        pt.index=dport['id']
+        df_ini=df_ini.append(pt)
+    return df_ini.dropna(how='all')
+
+
+
+
+
+
+"""
+u=Notional()
+da=u.getAccounts('borrow')
+px=u.getAssetPrices()
+portfolio=extractField(da,'portfolio')
+balance=extractField(da,'balances')
+print('ll')
+"""

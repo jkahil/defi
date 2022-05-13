@@ -150,8 +150,95 @@ class Aave:
         groups = [ids[(i) * steps:(i + 1) * steps] for i in range(0, nb_gp)]
         return pd.concat([self.userPosition(gp) for gp in groups])
 
-"""
+    def getTransactions(self):
+        cli = self.client
+        query = '''{
+          userTransactions (first: 1000,where:{timestamp_lte:1635793127,user:"0x0000006daea1723962647b7e189d311d757fb793"},orderBy:timestamp,orderDirection:asc){
+            id
+            pool {
+              id
+            }
+            user {
+              id
+              borrowedReservesCount
+            }
+            timestamp
+            __typename 
+            ...on Deposit {
+              pool {
+                id
+              }
+              reserve {
+                id
+                symbol
+                name
+                decimals
+              }
+              amount
+            }
+
+          ...on RedeemUnderlying{
+              pool {
+                id
+              }
+              reserve {
+                id
+                symbol
+                name
+                decimals
+              }
+              amount
+            }
+
+        ...on Borrow{
+              pool {
+                id
+              }
+              reserve {
+                id
+                symbol
+                name
+                decimals
+              }
+              amount
+            }
+        ...on UsageAsCollateral{
+              pool {
+                id
+              }
+              reserve {
+                id
+                symbol
+                name
+                decimals
+              }
+              fromState
+          		toState
+            }   
+
+        ...on Repay{
+          pool {
+            id
+          }
+          reserve {
+            id
+            symbol
+            name
+            decimals
+          }
+          amount
+        }
+          }
+        } '''
+        res = cli.execute(gql(query))
+        return res
+
 pool=Aave()
+tr=pool.getTransactions()
+res = pd.json_normalize(tr['userTransactions'])
+res.to_csv('transactions_wintermute.csv')
+print('l')
+"""
 userdata=pool.currentUsers('DAI')
 pos=pool.userPosition(userdata.index[0:100])
 print('finished')
