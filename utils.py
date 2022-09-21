@@ -25,15 +25,18 @@ def client(api_url):
     """
     Initializes a connection to subgraph
     :param api_url: subgraph url for connection
+    is_secure: do we need to use https
     :return:
     """
     sample_transport = RequestsHTTPTransport(
         url=api_url,
+        headers= {'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36'},
         verify=True,
         retries=10,
     )
     client = Client(
-        transport=sample_transport
+        transport=sample_transport,
+    fetch_schema_from_transport = True
     )
     return client
 
@@ -109,7 +112,7 @@ def getERC20HistTx(cli,address,erc_address=None):
     total_tx['TX_Value']=total_tx['value']/10**(total_tx['token_decimal'])*total_tx['Sign']
     total_tx['TX_Value']=total_tx['TX_Value']
     total_tx.index=total_tx['timestamp']
-    return total_tx[['TX_Value','token_symbol']]
+    return total_tx[['TX_Value','token_symbol','to','from']]
 
 def getERC20HistBalance(cli,address,erc_address=None):
     df_tx= getERC20HistTx(cli, address, erc_address)

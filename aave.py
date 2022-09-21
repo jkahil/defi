@@ -4,6 +4,7 @@ import json
 from utils import TIMESTAMP_PER_YEAR
 import pandas as pd
 import numpy as np
+from config import RAY_DECIMALS
 
 AAVE_API="https://api.thegraph.com/subgraphs/name/aave/protocol-v2"
 
@@ -15,7 +16,7 @@ class Aave:
         self.client = client(url)
 
         query='''query{
-            reserves(first: 1000) {
+            reserves(first: 1000,subgraphError: allow) {
             id
         underlyingAsset
         symbol
@@ -33,9 +34,12 @@ class Aave:
         reserveid=self.pools.loc[symbol]['id']
         decimals=self.pools.loc[symbol]['decimals']
         lastid=''
-        query=''' query($reserve_id: ID!,$lastID:ID!){
+        query=''' query($reserve_id: String!,$lastID:ID!){
             userReserves(first: 1000,
-            where: {reserve: $reserve_id,user_gt:$lastID})
+            where: {reserve: $reserve_id,id_gt:$lastID}, 
+            subgraphError: allow,
+            orderBy: id,
+            orderDirection: asc)
         {
 
             id
@@ -91,8 +95,9 @@ class Aave:
         cli=self.client
         finished=0
         agg = pd.DataFrame()
-        query=''' query($user_list:[ID!]!,$lastID:ID!){
-            userReserves(first: 1000, where: {user_in: $user_list,user_gt:$lastID})
+        query=''' query($user_list:[String!]!,$lastID:ID!){
+            userReserves(first: 1000, where: {user_in: $user_list,id_gt:$lastID},orderBy: id,
+            orderDirection: asc,subgraphError: allow)
         {
 
             id
@@ -232,12 +237,70 @@ class Aave:
         } '''
         res = cli.execute(gql(query))
         return res
+    def getHistBorrowRate(self,pool_id,start_ts,end_ts):
+        """
+
+        :param pool_id: pool id we want
+        :param start_ts: starting time stamp
+        :param end_ts: ending timestamp
+        :return:
+        """
+        cli = self.client
+        finished = 0
+        tstart=start_ts*1
+        agg = pd.DataFrame()
+        query = ''' query($tstart:Int!,$reserve_id:ID!,$tend:Int!){
+        reserveParamsHistoryItems(first: 1000,
+        where: {reserve:$reserve_id,timestamp_gte:$tstart,timestamp_lt:$tend}
+        orderBy: timestamp
+        orderDirection: asc,subgraphError: allow
+      ) {
+        variableBorrowRate
+        variableBorrowIndex
+        id
+        timestamp
+        reserve {
+          id
+          decimals
+        }
+        }
+        }'''
+        while (finished == 0):
+            try:
+                params = {
+                    "tstart": tstart,
+                    "tend":end_ts,
+                    "reserve_id":pool_id
+                }
+                res = cli.execute(gql(query), variable_values=params)
+                res = pd.json_normalize(res['reserveParamsHistoryItems']).drop(['reserve.id','id'], axis=1)
+                decimals=res.iloc[0]['reserve.decimals'].astype('int64')
+                # Rebase all the columns to decimals
+                col_to_rebase = ['variableBorrowRate','variableBorrowIndex']
+                for c in col_to_rebase:
+                    res[c] = res[c].astype('float')
+                    res[c] = res[c] / 10 ** RAY_DECIMALS
+                tstart = int(res['timestamp'].max()) + 1
+                res=res.set_index('timestamp')
+                agg=agg.append(res)
+
+
+            except:
+                return agg
 
 pool=Aave()
-tr=pool.getTransactions()
+token='stETH'
+pool_usdc=pool.currentUsers(token)
+w=pool_usdc.getHistBorrowRate()
+
+"""
+userdata=pool.currentUsers('FRAX')
+print('l')
+
 res = pd.json_normalize(tr['userTransactions'])
 res.to_csv('transactions_wintermute.csv')
 print('l')
+"""
 """
 userdata=pool.currentUsers('DAI')
 pos=pool.userPosition(userdata.index[0:100])

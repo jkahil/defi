@@ -96,6 +96,7 @@ class Notional:
         # adjust for trading fee
         trades['Market Rate']=np.where(trades['tradeType']=='Borrow',trades['APY']-trades['Ann Fee'],trades['APY']+trades['Ann Fee'])
         return trades
+
     def getAccounts(self,account_types='all'):
         """
         :param account_types: either 'all' for all accounts,'lend' for lenders only, 'borrow'
